@@ -1,23 +1,17 @@
 <script setup>
 import { ref } from "vue";
 import { Cloud } from "laf-client-sdk";
-import wx from "../../public/wx.png";
-// 将marked 引入
-import { marked } from "marked";
-import { User } from "@element-plus/icons-vue";
-import QrcodeVue from "qrcode.vue";
 import { ElMessage } from "element-plus";
 import axios from "axios";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 
 const cloud = new Cloud({
-  baseUrl: "https://jyf6wk.laf.dev",
-  getAccessToken: () => localStorage.getItem("access_token"),
+  baseUrl: "https://d0cmwb.laf.dev",
+  getAccessToken: () => '',
   timeout: 60000,
 });
 
-//======================================data======================================
 //消息列表
 const list = ref([]);
 //输入框绑定消息
@@ -26,46 +20,14 @@ const question = ref("");
 const parentMessageId = ref("");
 //获取消息loading
 const loading = ref(false);
-//充值dialog
-const centerDialogVisible = ref(false);
-//登录dialog
-const centerDialogVisible2 = ref(false);
-//手机号
-const phone = ref("");
-//验证码
-const code = ref("");
-//判断是否还在倒计时
-const codebut = ref(false);
-//手机号码错误弹出框
-const err = ref(false);
-//充值选项
-const indexUp = ref(0);
-//二维码展示dialog
-const upCode = ref(false);
-//发送验证码
-const content = ref("发送验证码");
-//验证码倒计时
-const totalTime = ref(60);
-//获取验证码按钮日否可以点击
-const canClick = ref(true);
-//用户剩余次数
-const amount = ref(0);
-//二维码链接
-const codeUrl = ref("");
-//订单号
-const payOrder = ref("");
 //判断设备
 const isMobile = ref(false);
+// 密令
+const validText = ref("");
+//登录dialog
+const validIdentityVisible = ref(false);
 //输入框提示
-const placeholder = ref("输入你的指令");
-//验证手机号
-const tel = /^(13[0-9]|14[01456879]|15[0-35-9]|16[2567]|17[0-8]|18[0-9]|19[0-35-9])\d{8}$/;
-
-//======================================created======================================
-
-// 获取用户剩余次数
-getAmount();
-
+const placeholder = ref("请输入问题");
 // 判断是否为移动设备
 if (
   /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -74,77 +36,17 @@ if (
 ) {
   isMobile.value = true;
 } else {
-  placeholder.value = "输入你的指令（Shift + Enter = 换行,Enter = 发送）";
-}
-
-//======================================function======================================
-
-// 获取用户剩余次数
-async function getAmount() {
-  if (!localStorage.getItem("access_token")) return;
-  const res = await cloud.invoke("get-amount");
-  amount.value = res.amount;
-}
-
-//获取验证码
-async function getCode() {
-  if (!tel.test(phone.value)) return (err.value = true);
-  if (codebut.value) return;
-  countDown();
-  const res = await cloud.invoke("getCode", { phone: phone.value });
-}
-
-//验证码倒计时
-function countDown() {
-  if (!canClick.value) return;
-  codebut.value = true;
-  canClick.value = false;
-  content.value = totalTime.value + "s后重新发送";
-  let clock = window.setInterval(() => {
-    totalTime.value--;
-    content.value = totalTime.value + "s后重新发送";
-    if (totalTime.value < 0) {
-      window.clearInterval(clock);
-      content.value = "重新发送验证码";
-      totalTime.value = 60;
-      canClick.value = true; //这里重新开启
-      codebut.value = false;
-    }
-  }, 1000);
-}
-
-//验证登录
-async function login() {
-  const res = await cloud.invoke("login", { phone: phone.value, code: code.value });
-  console.log(res);
-  if (res.code === 1) {
-    localStorage.setItem("access_token", res.data.access_token);
-    localStorage.setItem("user", JSON.stringify(res.data.user));
-    success();
-    centerDialogVisible2.value = false;
-    getAmount();
-  } else {
-    ElMessage({
-      message: "无效的验证码",
-      type: "error",
-    });
-  }
+  placeholder.value = "请输入问题";
 }
 
 //发送消息
 async function send() {
   //发送时验证登录
-  if (localStorage.getItem("access_token") == null)
-    return ElMessage({
-      message: "请先登录！",
-      type: "error",
-    });
-  //判断用户次数
-  if (amount.value <= 0)
-    return ElMessage({
-      message: "您的剩余次数不足，请充值！",
-      type: "error",
-    });
+  if (localStorage.getItem("isAuth") == null) {
+    validIdentityVisible.value = true
+    return;
+  }
+  
   //判断是否回复
   if (loading.value) return;
   list.value.push({
@@ -191,35 +93,33 @@ async function send() {
       avatar: "/logo.jpg",
     });
 
-    const token = localStorage.getItem("access_token");
-
     const obj = { message };
     if (parentMessageId.value) obj.parentMessageId = parentMessageId.value;
 
     axios({
-      url: `https://jyf6wk.laf.dev/send`,
+      url: `https://d0cmwb.laf.dev/chat-api`,
       method: "post",
       data: obj,
       responseType: "text",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: {},
       onDownloadProgress: function (progressEvent) {
         const xhr = progressEvent.event.target;
 
-        const { responseText } = xhr;
+        let { responseText = '' } = xhr;
+        
 
-        const parts = responseText.split("--!");
-        parentMessageId.value = parts[1];
-
-        list.value[list.value.length - 1].text = md.render(parts[0]);
-        loading.value = false;
-        setScreen();
+        let result = {}
+        if (typeof responseText === 'string') {
+          try {
+            result = JSON.parse(responseText)
+            parentMessageId.value = result.parentMessageId;
+            list.value[list.value.length - 1].text = md.render(result.text);
+            loading.value = false;
+            setScreen();
+          } catch (error) {}
+        }
       },
-    }).then(() => {
-      getAmount();
-    });
-
+    }).then(() => {});
     // 返回 id 并保存
   } catch (error) {
     console.log(error);
@@ -233,53 +133,22 @@ async function send() {
   }
 }
 
+// 验证密令
+function valid() {
+  if (validText.value === 'yang') {
+    localStorage.setItem("isAuth", '1')
+    validIdentityVisible.value = false
+    return ElMessage({ message: "密令输入成功！", type: "success" });
+  } else {
+    return ElMessage({ message: "密令输入错误！", type: "error" });
+  }
+}
+
 //定位页面位置
 function setScreen() {
   setTimeout(() => {
     window.scrollTo(0, document.body.scrollHeight);
   }, 0);
-}
-
-//验证手机号码弹出框
-function close() {
-  err.value = false;
-}
-
-//判断用户选择项
-function select(e) {
-  indexUp.value = e;
-}
-
-//点击充值
-async function openCode() {
-  let num = 0;
-  if (indexUp.value == 0) num = 2000;
-  if (indexUp.value == 1) num = 5000;
-  if (indexUp.value == 2) num = 100000;
-
-  const res = await cloud.invoke("pay", { amount: num });
-  payOrder.value = res.orderId;
-  codeUrl.value = res.codeUrl;
-  centerDialogVisible.value = false;
-  upCode.value = true;
-  checkPay();
-}
-
-//验证用户是否付款
-async function checkPay() {
-  const res = await cloud.invoke("check-pay-ordet", { order: payOrder.value });
-  if (res.code == 1) {
-    upCode.value = false;
-    getAmount();
-    ElMessage({
-      message: "充值成功",
-      type: "success",
-    });
-  } else {
-    setTimeout(() => {
-      checkPay();
-    }, 1000);
-  }
 }
 
 //发送消息适配PC或phone
@@ -288,204 +157,12 @@ function handleEnter(e) {
     send();
   }
 }
-
-//消息弹出框
-const success = () => {
-  ElMessage({
-    message: "登录成功",
-    type: "success",
-  });
-};
-
-//判断是否登录
-function judge() {
-  const access_token = localStorage.getItem("access_token");
-  if (access_token)
-    return ElMessage({
-      message: "您已经登录过了",
-      type: "success",
-    });
-  centerDialogVisible2.value = true;
-}
-
-//登录后可点击充值
-function judgeUp() {
-  if (!localStorage.getItem("access_token"))
-    return ElMessage({
-      message: "请登录",
-      type: "error",
-    });
-  centerDialogVisible.value = true;
-}
 </script>
 
 <template>
   <div class="page">
-    <!-- 头部 -->
-    <el-row class="head">
-      <div class="amount">剩余{{ amount }}</div>
-      <div>
-        <el-col :span="24">
-          <!-- ------------------------------------------ -->
-          <el-popover placement="bottom" :width="300" trigger="click">
-            <el-image style="width: 100%; height: 100%" :src="wx" />
-            <template #reference>
-              <el-button class="m-2">交流群</el-button>
-            </template>
-          </el-popover>
-          <!-- ------------------------------------------ -->
-
-          <el-button @click="judgeUp">充值</el-button>
-          <!-- ------------------------------------------ -->
-
-          <el-button @click="judge">
-            <el-icon style="vertical-align: middle">
-              <User />
-            </el-icon>
-            <span style="vertical-align: middle">登录</span>
-          </el-button>
-          <!-- ------------------------------------------ -->
-        </el-col>
-      </div>
-    </el-row>
-
-    <!-- 占位 -->
-    <div style="height: 52px"></div>
-
-    <!-- 充值弹出框 -->
-    <el-dialog v-model="centerDialogVisible" title="充值" width="50%" height="50%" center>
-      <div class="cardbox">
-        <!-- --------------------------------------------------------------- -->
-        <el-card @click="select(0)" :class="indexUp === 0 ? 'box-card' : 'boxCard'">
-          <div class="useNumber">400次</div>
-          <div class="money">
-            <span class="sign">￥</span>
-            <span class="number">20</span>
-          </div>
-        </el-card>
-
-        <!-- --------------------------------------------------------------- -->
-
-        <el-card
-          @click="select(1)"
-          :class="indexUp === 1 ? 'box-card' : 'boxCard'"
-          class="box-card"
-        >
-          <div class="useNumber">1千次</div>
-          <div class="money">
-            <span class="sign">￥</span>
-            <span class="number">50</span>
-          </div>
-        </el-card>
-
-        <el-card
-          @click="select(2)"
-          :class="indexUp === 2 ? 'box-card' : 'boxCard'"
-          class="box-card"
-        >
-          <div class="useNumber">2万次</div>
-          <div class="money">
-            <span class="sign">￥</span>
-            <span class="number">1000</span>
-          </div>
-        </el-card>
-      </div>
-      <!-- ----------------------------------------------------- -->
-      <div class="cheerbox">
-        <el-button @click="openCode" class="cheer" type="warning">充值</el-button>
-      </div>
-      <template #footer> </template>
-    </el-dialog>
-
-    <!-- 二维码弹出框 -->
-    <el-dialog v-model="upCode" width="50%" height="50%" center>
-      <div class="qrcode">
-        <qrcode-vue :value="codeUrl" :size="300" level="H" />
-        <div class="qrcodeText">微信扫码支付</div>
-      </div>
-      <template #footer> </template>
-    </el-dialog>
-
-    <!-- 登录弹出框 -->
-    <el-dialog v-model="centerDialogVisible2" title="登录" center>
-      <el-alert
-        @close="close"
-        v-show="err"
-        title="请输入正确的手机号码"
-        type="error"
-        center
-        show-icon
-      />
-      <div style="height: 200px">
-        <!-- ----------------------------------------------------- -->
-        <div class="accountbox">
-          <div class="inputname">手机号：</div>
-          <el-input
-            class="elinput"
-            size="small"
-            type="number"
-            v-model="phone"
-            placeholder="请输入手机号"
-          />
-        </div>
-
-        <!-- ----------------------------------------------------- -->
-
-        <div class="accountbox">
-          <div class="inputname">验证码：</div>
-          <el-input
-            class="elinputcode"
-            size="small"
-            v-model="code"
-            placeholder="请输入验证码"
-          />
-        </div>
-        <!-- ----------------------------------------------------- -->
-
-        <div class="loginbutbox">
-          <el-button
-            @click="getCode"
-            type="primary"
-            style="margin-top: 10px"
-            class="loginbut"
-            >{{ content }}</el-button
-          >
-        </div>
-        <div class="loginbutbox">
-          <el-button @click="login" class="loginbut">登录</el-button>
-        </div>
-      </div>
-      <template #footer> </template>
-    </el-dialog>
-
-    <!-- ------------------------------------------------------------ -->
     <div v-show="!list.length" class="begintitle">
-      <h1 style="font-family: Cursive; font-size: 50px">Laf Ai</h1>
-
-      <div style="margin-top: 80px; text-indent: 20px">
-        如果想寻求合作或深度交流，可
-        <a
-          style="color: #ff0405"
-          href="https://x85clg-wenjuan.site.laf.dev/#/pages/form/index?id=6412c9980ac642ce124ad116"
-          target="_blank"
-          >点击</a
-        >
-        留下信息<span v-if="isMobile === true">!</span>
-        <span v-if="isMobile === false">，我们顾问会第一时间联系您!</span>
-      </div>
-
-      <div style="margin-top: 10px">商务洽谈:18629359689</div>
-
-      <div class="lafText" v-if="isMobile === false">
-        <div style="text-align: center">
-          <a href="https://docs.sealos.io/zh-Hans/" style="color: #ff0405">Sealos</a>
-          <span> 开源云操作系统， </span>
-          <a href="https://laf.dev/" style="color: #ff0405">Laf</a>
-          <span> 开源函数计算平台 </span>
-        </div>
-        <div>快速交付分布式应用、小时级搭建个性化云系统、分钟级构建中间件服务</div>
-        <div>使用公有云IaaS的可降本50%，基于Sealos自建私有云可降本80%！</div>
-      </div>
+      <!-- 这里介绍 -->
     </div>
 
     <!-- 页面消息列表 -->
@@ -505,7 +182,17 @@ function judgeUp() {
       </div>
     </div>
 
-    <!-- ------------------------------------------------------ -->
+    <el-dialog v-model="validIdentityVisible" title="密令验证" center style="width:75%;">
+      <el-input
+        class="elinput"
+        v-model="validText"
+        placeholder="请输入密令"
+      />
+      <div class="loginbutbox">
+        <el-button type="primary" @click="valid" class="loginbut">验证密令</el-button>
+      </div>
+    </el-dialog>
+
 
     <!-- 输入框 -->
     <div class="inputbox">
@@ -538,8 +225,6 @@ function judgeUp() {
         </div>
       </div>
     </div>
-
-    <!-- ----------------------------------------------- -->
   </div>
 </template>
 
